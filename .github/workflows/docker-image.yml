@@ -1,0 +1,48 @@
+# .github/workflows/docker-image.yml
+name: Django CICD App
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - closed  # PR이 닫힐 때 트리거
+
+jobs:
+  build-deploy:
+    # PR이 실제로 머지된 경우에만 실행 (닫혔지만 머지 안 된 경우 제외)
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      # 소스 코드 체크아웃
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      # Docker Hub 로그인
+      - name: Login to Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Docker 이미지 빌드 후 Docker Hub에 푸시
+      - name: Docker build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKER_IMAGENAME }}:latest
+
+      # Elastic Beanstalk에 배포
+      - name: Beanstalk Deploy
+        uses: einaregilsson/beanstalk-deploy@v20
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: ${{ secrets.AWS_APPLICATION_NAME }}
+          environment_name: ${{ secrets.AWS_ENVIRONMENT_NAME }}
+          region: ap-northeast-2
+          version_label: "app-${{ github.sha }}"  # 커밋 해시로 버전 구분
+          deployment_package: Dockerrun.aws.json   # EB에 전달할 배포 명세
